@@ -1,0 +1,244 @@
+--explore the data, to check what's mean of the cases and deaths number
+SELECT *
+FROM uscoviddata;
+
+SELECT * 
+FROM uscoviddata
+ORDER BY date DESC;
+
+--to check if the cases and deaths number are accumulative day by day.
+SELECT *
+FROM uscoviddata
+WHERE state = 'New York';
+
+
+--To find how many distinct states in the data 
+SELECT COUNT(DISTINCT state)
+FROM uscoviddata;
+
+SELECT distinct(state), fips
+FROM uscoviddata
+ORDER BY fips;
+
+--Rolling cases in US between 2020-1-21 to 2022-3-21
+SELECT date,sum(cases) as daily_total_cases, sum(deaths) as daily_total_deaths
+FROM uscoviddata
+WHERE date < '2022-03-22'
+GROUP BY date
+ORDER BY date DESC
+
+
+--select the specific date's data, to get know how many cases and deaths accumulated to that date for each state. Choose '2022-03-21' because our vaccination table's date is end on '2022-03-21'
+SELECT *
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21';
+
+SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21';
+
+CREATE VIEW totalStateData AS
+(SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21');
+
+SELECT COUNT(state)
+FROM USPOPULATION;
+
+SELECT * 
+FROM uspopulation;
+
+
+
+--inner join uscoviddata table with population table using the same column name "state", to find the pandemic trend between States based on the populations
+SELECT totalData.fips, totalData.state, totalData.cases, totalData.deaths, uspopulation.populations 
+FROM (SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21') AS totalData
+INNER JOIN uspopulation
+ON totalData.state = uspopulation.state;
+
+--Create View, prepare data for data visualization
+CREATE VIEW state_Data_Population AS (SELECT totalData.fips, totalData.state, totalData.cases, totalData.deaths, uspopulation.populations 
+FROM (SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21') AS totalData
+INNER JOIN uspopulation
+ON totalData.state = uspopulation.state);
+
+--Showing states with hightest infection rate compared to population and death count per population
+SELECT fips, state, cases, deaths, populations, CAST((CAST(cases AS DECIMAL(12,3))/CAST(populations AS DECIMAL(12,3))) AS DECIMAL(12,5))*100 as infection_rate,
+         CAST((CAST(deaths AS DECIMAL(12,3))/CAST(populations AS DECIMAL(12,3))) AS DECIMAL(12,5))*100 as deaths_rate       
+FROM (SELECT totalData.fips, totalData.state, totalData.cases, totalData.deaths, uspopulation.populations 
+FROM (SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21') AS totalData
+INNER JOIN uspopulation
+ON totalData.state = uspopulation.state) AS state_Data_Population
+ORDER BY infection_rate DESC, deaths_rate DESC;
+
+--How much likelihood of dying if one person got covid in each state(deaths/cases)?
+SELECT fips, state, cases, deaths, populations, CAST((CAST(cases AS DECIMAL(12,3))/CAST(populations AS DECIMAL(12,3))) AS DECIMAL(12,5))*100 as infection_rate,
+         CAST((CAST(deaths AS DECIMAL(12,3))/CAST(populations AS DECIMAL(12,3))) AS DECIMAL(12,5))*100 as deaths_rate, 
+		 CAST((CAST(deaths AS DECIMAL(12,3))/CAST(cases AS DECIMAL(12,3))) AS DECIMAL(12,5))*100 as dying_risk_once_infected       
+FROM (SELECT totalData.fips, totalData.state, totalData.cases, totalData.deaths, uspopulation.populations 
+FROM (SELECT state, fips, cases, deaths
+FROM uscoviddata
+WHERE date BETWEEN '2022-03-21' and '2022-03-21') AS totalData
+INNER JOIN uspopulation
+ON totalData.state = uspopulation.state) AS state_Data_Population
+ORDER BY infection_rate DESC, deaths_rate DESC, dying_risk_once_infected DESC;
+
+
+
+
+--Do we flatten the Curve? Flattening the Curve typically implies even if the number of Confirmed Cases are
+--increasing but the distribution of those cases should be over longer timestamp. In simple words, suppose
+--COVID-19 is going infect 100K people need 1 year but not in a month, that means we flatten the curve.
+--To find the answer, we need to explore the US daily new cases in the timestamp.
+SELECT *
+FROM uscoviddata;
+
+--accumulated total cases and total deaths day by day
+SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date desc;
+
+--To find daily new cases, to explore the daily case growth trend
+SELECT date, (accumulated_total_cases - previous_cases) AS new_cases
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_cases) OVER(ORDER BY daily_data.date) AS previous_cases
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data;
+
+--order by new cases column descendingly, found that the cases growth rate increased sharply during Jannuary 2022.
+SELECT date, (accumulated_total_cases - previous_cases) AS new_cases
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_cases) OVER(ORDER BY daily_data.date) AS previous_cases
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data
+ORDER BY new_cases desc;
+
+
+--To find daily new deaths, to explore the daily deaths growth trend
+SELECT date, accumulated_total_cases, accumulated_total_deaths, (accumulated_total_deaths - previous_deaths) AS new_deaths
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_deaths) OVER(ORDER BY daily_data.date) AS previous_deaths
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data;
+
+--order new deaths column descendingly, found that the deaths growth rate increased sharply during Jannuary to feburary in 2021.
+SELECT date, (accumulated_total_deaths - previous_deaths) AS new_deaths
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_deaths) OVER(ORDER BY daily_data.date) AS previous_deaths
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data
+ORDER BY new_deaths desc;
+
+--new deaths and new cases on daily base in US
+SELECT new_case_daily.date, new_case_daily.new_cases,new_deaths
+FROM (SELECT date, (accumulated_total_cases - previous_cases) AS new_cases
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_cases) OVER(ORDER BY daily_data.date) AS previous_cases
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data) AS new_case_daily
+INNER JOIN (SELECT date, accumulated_total_cases, accumulated_total_deaths, (accumulated_total_deaths - previous_deaths) AS new_deaths
+FROM (SELECT date, accumulated_total_cases, accumulated_total_deaths, LAG(daily_data.accumulated_total_deaths) OVER(ORDER BY daily_data.date) AS previous_deaths
+FROM (SELECT date, SUM(cases) AS accumulated_total_cases, SUM(deaths) AS accumulated_total_deaths   
+FROM uscoviddata
+WHERE date BETWEEN '2020-01-21' AND '2022-03-21'
+GROUP BY date
+ORDER BY date) AS daily_data) AS new_daily_data) AS new_death_daily
+ON new_case_daily.date = new_death_daily.date;
+
+
+--Now we explore vaccination data to find if the flatten curve is benefited with the vaccination, to find the relation
+--between the COVID cases and the vaccination.
+SELECT *
+FROM vaccination;
+
+SELECT *
+FROM vaccination
+ORDER BY date DESC;
+
+SELECT date,state,total_vaccinations, people_vaccinated, people_fully_vaccinated, daily_vaccinations, total_boosters
+FROM vaccination
+
+--US TOTAL vaccination data on daily base
+SELECT date, sum(total_vaccinations) as US_total_vaccinations, sum(people_vaccinated) as total_people_vaccinated, 
+sum(people_fully_vaccinated) as total_fully_vaccinated, sum(daily_vaccinations) as total_daily_vaccinations, sum(total_boosters) as total_booster
+FROM vaccination
+GROUP BY date
+ORDER BY date DESC;
+
+--US TOTAL vaccination data on daily base BETWEEN '2021-01-19' AND '2022-03-21'(Delete the data that has null)
+SELECT date, sum(total_vaccinations) as US_total_vaccinations, sum(people_vaccinated) as total_people_vaccinated, 
+sum(people_fully_vaccinated) as total_fully_vaccinated, sum(daily_vaccinations) as total_daily_vaccinations, sum(total_boosters) as total_booster
+FROM vaccination
+WHERE date BETWEEN '2021-01-19' AND '2022-03-21'
+GROUP BY date
+ORDER BY date;
+
+--Create view about the US viccination data
+CREATE VIEW US_daily_viccination AS
+(SELECT date, sum(total_vaccinations) as US_total_vaccinations, sum(people_vaccinated) as total_people_vaccinated, 
+sum(people_fully_vaccinated) as total_fully_vaccinated, sum(daily_vaccinations) as total_daily_vaccinations, sum(total_boosters) as total_booster
+FROM vaccination
+WHERE date BETWEEN '2021-01-19' AND '2022-03-21'
+GROUP BY date
+ORDER BY date);
+
+--Analysis each state's vaccination data, inner join viccination table with population
+--table using the same column name "state", to find the vaccination trend between States based on the populations
+SELECT state, su 
+FROM vaccination
+
+update vaccination
+set state = 'New York'
+where state = 'New York State';
+
+SELECT * 
+FROM (SELECT state,total_vaccinations, people_vaccinated, people_fully_vaccinated, total_boosters
+FROM vaccination
+WHERE date BETWEEN '2022-03-21' and '2022-03-21'
+ORDER BY people_vaccinated DESC) AS state_vaccination
+INNER JOIN uspopulation
+ON state_vaccination.state = uspopulation.state;
+
+SELECT state,total_vaccinations, people_vaccinated, people_fully_vaccinated, total_boosters
+FROM vaccination
+WHERE date BETWEEN '2022-03-21' and '2022-03-21'
+ORDER BY people_vaccinated DESC
+
+--Vaccinated rate in each State
+SELECT state_vaccination.state, state_vaccination.people_vaccinated, state_vaccination.people_fully_vaccinated,state_vaccination.total_boosters, populations, CAST((CAST(people_vaccinated AS DECIMAL(12,3))/CAST(uspopulation.populations AS DECIMAL(12,3))) AS DECIMAL(12,4))*100  
+AS people_vaccinated_rate, CAST((CAST(people_fully_vaccinated AS DECIMAL(12,3))/CAST(uspopulation.populations AS DECIMAL(12,3))) AS DECIMAL(12,4))*100  
+AS people_fully_vaccinated_rate
+FROM (SELECT state,total_vaccinations, people_vaccinated, people_fully_vaccinated, total_boosters
+FROM vaccination
+WHERE date BETWEEN '2022-03-21' and '2022-03-21'
+ORDER BY people_vaccinated DESC) AS state_vaccination
+INNER JOIN uspopulation
+ON state_vaccination.state = uspopulation.state
+ORDER BY people_vaccinated_rate DESC;
+
+
+
+--Each state daily infection rate
+SELECT date, uscoviddata.state, cases, deaths, populations,CAST((CAST(cases AS DECIMAL (15,5))/CAST(populations AS DECIMAL (15,3))) AS DECIMAL (15,5))*100 AS daily_infection_rate
+FROM uscoviddata
+INNER JOIN uspopulation
+ON uscoviddata.state = uspopulation.state
+ORDER BY daily_infection_rate DESC;
